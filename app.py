@@ -4,8 +4,9 @@ import os
 import gdown
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score
 import streamlit as st
 
 # === Download the dataset from Google Drive ===
@@ -38,16 +39,31 @@ X_scaled = scaler.fit_transform(X)
 # Train/test split
 X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, stratify=y, random_state=2)
 
-# Train the Logistic Regression model
-model = LogisticRegression(class_weight='balanced', max_iter=1000)
-model.fit(X_train, y_train)
+# === Define multiple models ===
+lr_model = LogisticRegression(class_weight='balanced', max_iter=1000)
+rf_model = RandomForestClassifier(n_estimators=100, random_state=2)
+gb_model = GradientBoostingClassifier(n_estimators=100, random_state=2)
+
+# Voting Classifier
+ensemble_model = VotingClassifier(
+    estimators=[
+        ('lr', lr_model),
+        ('rf', rf_model),
+        ('gb', gb_model)
+    ],
+    voting='hard'
+)
+
+# Train ensemble model
+ensemble_model.fit(X_train, y_train)
 
 # Accuracy (optional display)
-train_acc = accuracy_score(model.predict(X_train), y_train)
-test_acc = accuracy_score(model.predict(X_test), y_test)
+train_acc = accuracy_score(ensemble_model.predict(X_train), y_train)
+test_acc = accuracy_score(ensemble_model.predict(X_test), y_test)
 
 # === Streamlit UI ===
 st.title("💳 Credit Card Fraud Detection")
+st.write(f"Ensemble model accuracy: **{test_acc:.4f}**")
 st.write("Enter all 30 feature values separated by commas to check if a transaction is **legitimate or fraudulent**.")
 
 # Input field
@@ -65,7 +81,7 @@ if st.button("Submit"):
             # Apply the same scaling to the input
             input_array = np.array(input_list).reshape(1, -1)
             input_scaled = scaler.transform(input_array)
-            prediction = model.predict(input_scaled)[0]
+            prediction = ensemble_model.predict(input_scaled)[0]
             result = "✅ Legitimate transaction" if prediction == 0 else "🚨 Fraudulent transaction"
             st.success(result)
     except Exception as e:
