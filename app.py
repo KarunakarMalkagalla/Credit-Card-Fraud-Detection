@@ -1,119 +1,92 @@
-import numpy as np
+import numpy as npAdd commentMore actions
 import pandas as pd
+import os
+import gdown
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler # Import StandardScaler
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score
 import streamlit as st
-import joblib # For saving/loading the model
 
-# --- Data Loading and Model Training (run once and save) ---
+# load data
+data = pd.read_csv('creditcard.csv')
+# === Download the dataset from Google Drive ===
+file_id = '1kf0xO4s8oi6rB0V61dl3zFaHf8iOzbkf'
+url = f'https://drive.google.com/uc?id={file_id}'
+output = 'creditcard.csv'
 
-# @st.cache_data is good for loading data that doesn't change,
-# preventing it from reloading every time the app reruns.
-@st.cache_data
-def load_and_prepare_data():
-    data = pd.read_csv('creditcard.csv')
-    return data
+# separate legitimate and fraudulent transactions
+if not os.path.exists(output):
+    gdown.download(url, output, quiet=False)
 
-data = load_and_prepare_data()
+# === Load and prepare data ===
+data = pd.read_csv(output)
 
-# Separate features (X) and target (y)
+# Separate legitimate and fraudulent transactions
+legit = data[data.Class == 0]
+fraud = data[data.Class == 1]
+
+# undersample legitimate transactions to balance the classes
+# Undersample legitimate transactions
+legit_sample = legit.sample(n=len(fraud), random_state=2)
+data = pd.concat([legit_sample, fraud], axis=0)
+
+# split data into training and testing sets
+# Split features and labels
 X = data.drop(columns="Class", axis=1)
 y = data["Class"]
 
-# Split data into training and testing sets
+# Train/test split
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=2)
 
-# --- Feature Scaling ---
-# Initialize the StandardScaler
-scaler = StandardScaler()
+# train logistic regression model
+# Train the model
+model = LogisticRegression()
+model.fit(X_train, y_train)
 
-# Fit the scaler on the training data and transform both training and test data
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
+# evaluate model performance
+# Accuracy (optional display)
+train_acc = accuracy_score(model.predict(X_train), y_train)
+test_acc = accuracy_score(model.predict(X_test), y_test)
 
-# --- Train Logistic Regression model ---
-model = LogisticRegression(class_weight='balanced', solver='liblinear', max_iter=1000, random_state=2)
-model.fit(X_train_scaled, y_train) # Train on scaled data
-
-# --- Save the trained model and scaler ---
-# It's good practice to save these so you don't retrain every time the app starts
-joblib.dump(model, 'logistic_regression_model.pkl')
-joblib.dump(scaler, 'scaler.pkl')
-
-# --- Load the model and scaler (for actual app use) ---
-# Use st.cache_resource to load models/scalers once
-@st.cache_resource
-def load_saved_model_and_scaler():
-    loaded_model = joblib.load('logistic_regression_model.pkl')
-    loaded_scaler = joblib.load('scaler.pkl')
-    return loaded_model, loaded_scaler
-
-loaded_model, loaded_scaler = load_saved_model_and_scaler()
-
-# --- Evaluate model performance on the scaled test set ---
-y_pred_test = loaded_model.predict(X_test_scaled)
-y_proba_test = loaded_model.predict_proba(X_test_scaled)[:, 1]
-
-test_acc = accuracy_score(y_test, y_pred_test)
-test_precision = precision_score(y_test, y_pred_test)
-test_recall = recall_score(y_test, y_pred_test)
-test_f1 = f1_score(y_test, y_pred_test)
-test_roc_auc = roc_auc_score(y_test, y_proba_test)
-
-# --- Streamlit App ---
+# create Streamlit app
 st.title("Credit Card Fraud Detection Model")
-st.write("Enter the following features (Time, V1-V28, Amount) separated by commas:")
-st.markdown("---")
+st.write("Enter the following features to check if the transaction is legitimate or fraudulent:")
 
-# Display model performance in the sidebar or at the top for context
-st.subheader("Model Performance on Test Set:")
-st.write(f"**Accuracy:** {test_acc:.4f}")
-st.write(f"**Precision:** {test_precision:.4f} (Ability of the model to avoid false positives)")
-st.write(f"**Recall:** {test_recall:.4f} (Ability of the model to find all the positive samples)")
-st.write(f"**F1-Score:** {test_f1:.4f} (Harmonic mean of precision and recall)")
-st.write(f"**ROC AUC Score:** {test_roc_auc:.4f} (Overall measure of classification performance)")
-st.markdown("---")
+# create input fields for user to enter feature values
+input_df = st.text_input('Input all features separated by commas')
+input_df_lst = input_df.split(',')
+# === Streamlit UI ===
+st.title("💳 Credit Card Fraud Detection")
+st.write("Enter all 30 feature values separated by commas to check if a transaction is **legitimate or fraudulent**.")
 
-# Create a single text input field for user to enter all feature values
-input_df = st.text_input('Input all 30 features separated by commas (e.g., Time,V1,...,V28,Amount)')
-
-# Create a button to submit input and get prediction
-submit = st.button("Predict")
+# create a button to submit input and get prediction
+submit = st.button("Submit")
+# Input field
+input_text = st.text_input("📝 Feature Input", placeholder="Enter 30 comma-separated values like: 0.1, -1.2, ...")
 
 if submit:
-    if input_df: # Check if input is not empty
-        try:
-            # Split the input string by commas and convert to float
-            input_df_lst = input_df.split(',')
-            
-            # Ensure exactly 30 features are provided
-            if len(input_df_lst) != 30:
-                st.error(f"Please enter exactly 30 feature values. You entered {len(input_df_lst)}.")
-            else:
-                # Convert list of strings to numpy array of floats
-                features = np.array(input_df_lst, dtype=np.float64)
-                
-                # Reshape for single prediction (1 row, 30 columns)
-                # The model expects a 2D array, even for a single sample.
-                input_features_reshaped = features.reshape(1, -1)
-                
-                # --- Scale the user input using the loaded scaler ---
-                scaled_input_features = loaded_scaler.transform(input_features_reshaped)
-                
-                # Make prediction using the loaded model on scaled input
-                prediction = loaded_model.predict(scaled_input_features)
-                prediction_proba = loaded_model.predict_proba(scaled_input_features)[0] # Get probabilities
-
-                # Display result
-                if prediction[0] == 0:
-                    st.success(f"**Prediction: Legitimate transaction** (Probability of fraud: {prediction_proba[1]:.4f})")
-                else:
-                    st.error(f"**Prediction: Fraudulent transaction** (Probability of fraud: {prediction_proba[1]:.4f})")
-        except ValueError:
-            st.error("Please enter valid numerical feature values separated by commas.")
-        except Exception as e:
-            st.error(f"An unexpected error occurred: {e}. Please check your input format.")
-    else:
-        st.warning("Please enter the feature values before clicking Predict.")
+# Submit button
+if st.button("Submit"):
+    try:
+        # get input feature values
+        features = np.array(input_df_lst, dtype=np.float64)
+        # make prediction
+        prediction = model.predict(features.reshape(1, -1))
+        # display result
+        if prediction[0] == 0:
+            st.write("Legitimate transaction")
+        # Parse and convert input to float array
+        input_list = [float(i.strip()) for i in input_text.split(',')]
+        
+        if len(input_list) != X.shape[1]:
+            st.error(f"⚠️ Please enter exactly {X.shape[1]} features.")
+        else:
+            st.write("Fraudulent transaction")
+    except ValueError:
+        st.write("Please enter valid feature values separated by commas.")
+            input_array = np.array(input_list).reshape(1, -1)
+            prediction = model.predict(input_array)[0]
+            result = "✅ Legitimate transaction" if prediction == 0 else "🚨 Fraudulent transaction"
+            st.success(result)
+    except Exception as e:
+        st.error("⚠️ Invalid input. Please enter numeric values only.")
