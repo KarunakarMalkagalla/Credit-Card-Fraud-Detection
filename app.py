@@ -2,13 +2,12 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler # Import StandardScaler
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 import streamlit as st
 import joblib # For saving/loading the model
 
-# --- Data Loading and Model Training (only run once) ---
-# It's good practice to train and save your model separately, then load it.
-# For this example, training is kept within the app for ease of demonstration.
+# --- Data Loading and Model Training (run once and save) ---
 
 # @st.cache_data is good for loading data that doesn't change,
 # preventing it from reloading every time the app reruns.
@@ -24,20 +23,38 @@ X = data.drop(columns="Class", axis=1)
 y = data["Class"]
 
 # Split data into training and testing sets
-# Stratify=y ensures that the proportion of legitimate/fraudulent transactions
-# is the same in both training and test sets.
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=2)
 
-# Train Logistic Regression model
-# Using class_weight='balanced' to handle the imbalanced dataset
-# solver='liblinear' is generally robust for smaller datasets and L1/L2 regularization
-# max_iter increased to help with convergence warnings
-model = LogisticRegression(class_weight='balanced', solver='liblinear', max_iter=1000, random_state=2)
-model.fit(X_train, y_train)
+# --- Feature Scaling ---
+# Initialize the StandardScaler
+scaler = StandardScaler()
 
-# Evaluate model performance on the test set
-y_pred_test = model.predict(X_test)
-y_proba_test = model.predict_proba(X_test)[:, 1] # Probability of being class 1 (fraud)
+# Fit the scaler on the training data and transform both training and test data
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# --- Train Logistic Regression model ---
+model = LogisticRegression(class_weight='balanced', solver='liblinear', max_iter=1000, random_state=2)
+model.fit(X_train_scaled, y_train) # Train on scaled data
+
+# --- Save the trained model and scaler ---
+# It's good practice to save these so you don't retrain every time the app starts
+joblib.dump(model, 'logistic_regression_model.pkl')
+joblib.dump(scaler, 'scaler.pkl')
+
+# --- Load the model and scaler (for actual app use) ---
+# Use st.cache_resource to load models/scalers once
+@st.cache_resource
+def load_saved_model_and_scaler():
+    loaded_model = joblib.load('logistic_regression_model.pkl')
+    loaded_scaler = joblib.load('scaler.pkl')
+    return loaded_model, loaded_scaler
+
+loaded_model, loaded_scaler = load_saved_model_and_scaler()
+
+# --- Evaluate model performance on the scaled test set ---
+y_pred_test = loaded_model.predict(X_test_scaled)
+y_proba_test = loaded_model.predict_proba(X_test_scaled)[:, 1]
 
 test_acc = accuracy_score(y_test, y_pred_test)
 test_precision = precision_score(y_test, y_pred_test)
@@ -80,8 +97,14 @@ if submit:
                 
                 # Reshape for single prediction (1 row, 30 columns)
                 # The model expects a 2D array, even for a single sample.
-                prediction = model.predict(features.reshape(1, -1))
-                prediction_proba = model.predict_proba(features.reshape(1, -1))[0] # Get probabilities
+                input_features_reshaped = features.reshape(1, -1)
+                
+                # --- Scale the user input using the loaded scaler ---
+                scaled_input_features = loaded_scaler.transform(input_features_reshaped)
+                
+                # Make prediction using the loaded model on scaled input
+                prediction = loaded_model.predict(scaled_input_features)
+                prediction_proba = loaded_model.predict_proba(scaled_input_features)[0] # Get probabilities
 
                 # Display result
                 if prediction[0] == 0:
