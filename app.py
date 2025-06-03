@@ -39,7 +39,7 @@ X_scaled = scaler.fit_transform(X)
 X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, stratify=y, random_state=2)
 
 # Train the Logistic Regression model
-model = LogisticRegression()
+model = LogisticRegression(class_weight='balanced', max_iter=1000)
 model.fit(X_train, y_train)
 
 # Accuracy (optional display)
