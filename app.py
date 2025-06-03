@@ -7,42 +7,38 @@ import streamlit as st
 import joblib # For saving/loading the model
 
 # --- Data Loading and Model Training (only run once) ---
-# It's better to train your model and save it, then load it in the app.
-# For demonstration, I'll keep it here, but ideally this part is separated.
+# It's good practice to train and save your model separately, then load it.
+# For this example, training is kept within the app for ease of demonstration.
 
-@st.cache_data # Cache the data loading to avoid re-loading on every rerun
+# @st.cache_data is good for loading data that doesn't change,
+# preventing it from reloading every time the app reruns.
+@st.cache_data
 def load_and_prepare_data():
     data = pd.read_csv('creditcard.csv')
-    # Using class_weight in LogisticRegression, so explicit undersampling is not strictly needed here
-    # However, if you want to explicitly undersample for a balanced dataset before training, keep these lines:
-    legit = data[data.Class == 0]
-    fraud = data[data.Class == 1]
-    # If you still want to undersample for training, use:
-    # legit_sample = legit.sample(n=len(fraud), random_state=2)
-    # data_balanced = pd.concat([legit_sample, fraud], axis=0)
-    # return data_balanced
-
     return data
 
 data = load_and_prepare_data()
 
+# Separate features (X) and target (y)
 X = data.drop(columns="Class", axis=1)
 y = data["Class"]
 
+# Split data into training and testing sets
+# Stratify=y ensures that the proportion of legitimate/fraudulent transactions
+# is the same in both training and test sets.
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=2)
 
-# Train Logistic Regression model with balanced class weights
-# solver='liblinear' is often a good choice for smaller datasets and handles L1/L2 penalties well
-model = LogisticRegression(class_weight='balanced', solver='liblinear', max_iter=1000) # Increased max_iter for convergence
-
+# Train Logistic Regression model
+# Using class_weight='balanced' to handle the imbalanced dataset
+# solver='liblinear' is generally robust for smaller datasets and L1/L2 regularization
+# max_iter increased to help with convergence warnings
+model = LogisticRegression(class_weight='balanced', solver='liblinear', max_iter=1000, random_state=2)
 model.fit(X_train, y_train)
 
-# Evaluate model performance (displaying in app)
-y_pred_train = model.predict(X_train)
+# Evaluate model performance on the test set
 y_pred_test = model.predict(X_test)
 y_proba_test = model.predict_proba(X_test)[:, 1] # Probability of being class 1 (fraud)
 
-train_acc = accuracy_score(y_train, y_pred_train)
 test_acc = accuracy_score(y_test, y_pred_test)
 test_precision = precision_score(y_test, y_pred_test)
 test_recall = recall_score(y_test, y_pred_test)
@@ -51,56 +47,50 @@ test_roc_auc = roc_auc_score(y_test, y_proba_test)
 
 # --- Streamlit App ---
 st.title("Credit Card Fraud Detection Model")
-st.write("Enter the following features to check if the transaction is legitimate or fraudulent:")
-
-st.subheader("Model Performance on Test Set:")
-st.write(f"**Accuracy:** {test_acc:.4f}")
-st.write(f"**Precision:** {test_precision:.4f}")
-st.write(f"**Recall:** {test_recall:.4f}")
-st.write(f"**F1-Score:** {test_f1:.4f}")
-st.write(f"**ROC AUC Score:** {test_roc_auc:.4f}")
+st.write("Enter the following features (Time, V1-V28, Amount) separated by commas:")
 st.markdown("---")
 
+# Display model performance in the sidebar or at the top for context
+st.subheader("Model Performance on Test Set:")
+st.write(f"**Accuracy:** {test_acc:.4f}")
+st.write(f"**Precision:** {test_precision:.4f} (Ability of the model to avoid false positives)")
+st.write(f"**Recall:** {test_recall:.4f} (Ability of the model to find all the positive samples)")
+st.write(f"**F1-Score:** {test_f1:.4f} (Harmonic mean of precision and recall)")
+st.write(f"**ROC AUC Score:** {test_roc_auc:.4f} (Overall measure of classification performance)")
+st.markdown("---")
 
-# Create individual input fields for each feature
-# Get average values to use as default inputs (optional, but helpful)
-avg_values = X.mean().values
-
-col1, col2, col3 = st.columns(3) # Use columns for better layout
-
-input_features = {}
-feature_names = X.columns.tolist() # Get actual feature names from the DataFrame
-
-# Create input fields dynamically
-for i, feature_name in enumerate(feature_names):
-    if i % 3 == 0:
-        with col1:
-            input_features[feature_name] = st.number_input(f'{feature_name}', value=float(avg_values[i]), format="%.6f", key=feature_name)
-    elif i % 3 == 1:
-        with col2:
-            input_features[feature_name] = st.number_input(f'{feature_name}', value=float(avg_values[i]), format="%.6f", key=feature_name)
-    else:
-        with col3:
-            input_features[feature_name] = st.number_input(f'{feature_name}', value=float(avg_values[i]), format="%.6f", key=feature_name)
-
-
-# Convert input_features dictionary to a numpy array in the correct order
-features_array = np.array([input_features[name] for name in feature_names]).reshape(1, -1)
+# Create a single text input field for user to enter all feature values
+input_df = st.text_input('Input all 30 features separated by commas (e.g., Time,V1,...,V28,Amount)')
 
 # Create a button to submit input and get prediction
 submit = st.button("Predict")
 
 if submit:
-    try:
-        # Make prediction
-        prediction = model.predict(features_array)
-        prediction_proba = model.predict_proba(features_array)[0] # Get probabilities for both classes
+    if input_df: # Check if input is not empty
+        try:
+            # Split the input string by commas and convert to float
+            input_df_lst = input_df.split(',')
+            
+            # Ensure exactly 30 features are provided
+            if len(input_df_lst) != 30:
+                st.error(f"Please enter exactly 30 feature values. You entered {len(input_df_lst)}.")
+            else:
+                # Convert list of strings to numpy array of floats
+                features = np.array(input_df_lst, dtype=np.float64)
+                
+                # Reshape for single prediction (1 row, 30 columns)
+                # The model expects a 2D array, even for a single sample.
+                prediction = model.predict(features.reshape(1, -1))
+                prediction_proba = model.predict_proba(features.reshape(1, -1))[0] # Get probabilities
 
-        # Display result
-        if prediction[0] == 0:
-            st.success(f"**Prediction: Legitimate transaction** (Probability of fraud: {prediction_proba[1]:.4f})")
-        else:
-            st.error(f"**Prediction: Fraudulent transaction** (Probability of fraud: {prediction_proba[1]:.4f})")
-
-    except Exception as e:
-        st.error(f"An error occurred: {e}. Please ensure all fields are filled correctly.")
+                # Display result
+                if prediction[0] == 0:
+                    st.success(f"**Prediction: Legitimate transaction** (Probability of fraud: {prediction_proba[1]:.4f})")
+                else:
+                    st.error(f"**Prediction: Fraudulent transaction** (Probability of fraud: {prediction_proba[1]:.4f})")
+        except ValueError:
+            st.error("Please enter valid numerical feature values separated by commas.")
+        except Exception as e:
+            st.error(f"An unexpected error occurred: {e}. Please check your input format.")
+    else:
+        st.warning("Please enter the feature values before clicking Predict.")
