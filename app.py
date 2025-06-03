@@ -5,6 +5,7 @@ import gdown
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
+from sklearn.preprocessing import StandardScaler
 import streamlit as st
 
 # === Download the dataset from Google Drive ===
@@ -30,10 +31,14 @@ data = pd.concat([legit_sample, fraud], axis=0)
 X = data.drop(columns="Class", axis=1)
 y = data["Class"]
 
-# Train/test split
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=2)
+# === Feature Scaling ===
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
 
-# Train the model
+# Train/test split
+X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, stratify=y, random_state=2)
+
+# Train the Logistic Regression model
 model = LogisticRegression()
 model.fit(X_train, y_train)
 
@@ -57,8 +62,10 @@ if st.button("Submit"):
         if len(input_list) != X.shape[1]:
             st.error(f"⚠️ Please enter exactly {X.shape[1]} features.")
         else:
+            # Apply the same scaling to the input
             input_array = np.array(input_list).reshape(1, -1)
-            prediction = model.predict(input_array)[0]
+            input_scaled = scaler.transform(input_array)
+            prediction = model.predict(input_scaled)[0]
             result = "✅ Legitimate transaction" if prediction == 0 else "🚨 Fraudulent transaction"
             st.success(result)
     except Exception as e:
