@@ -1,88 +1,55 @@
-import numpy as np
+import numpy as npAdd commentMore actions
 import pandas as pd
-import os
-import gdown
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
-from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score
 import streamlit as st
 
-# === Download the dataset from Google Drive ===
-file_id = '1kf0xO4s8oi6rB0V61dl3zFaHf8iOzbkf'
-url = f'https://drive.google.com/uc?id={file_id}'
-output = 'creditcard.csv'
+# load data
+data = pd.read_csv('creditcard.csv')
 
-if not os.path.exists(output):
-    gdown.download(url, output, quiet=False)
-
-# === Load and prepare data ===
-data = pd.read_csv(output)
-
-# Separate legitimate and fraudulent transactions
+# separate legitimate and fraudulent transactions
 legit = data[data.Class == 0]
 fraud = data[data.Class == 1]
 
-# Undersample legitimate transactions
+# undersample legitimate transactions to balance the classes
 legit_sample = legit.sample(n=len(fraud), random_state=2)
 data = pd.concat([legit_sample, fraud], axis=0)
 
-# Split features and labels
+# split data into training and testing sets
 X = data.drop(columns="Class", axis=1)
 y = data["Class"]
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=2)
 
-# === Feature Scaling ===
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
+# train logistic regression model
+model = LogisticRegression()
+model.fit(X_train, y_train)
 
-# Train/test split
-X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, stratify=y, random_state=2)
+# evaluate model performance
+train_acc = accuracy_score(model.predict(X_train), y_train)
+test_acc = accuracy_score(model.predict(X_test), y_test)
 
-# === Define multiple models ===
-lr_model = LogisticRegression(class_weight='balanced', max_iter=1000)
-rf_model = RandomForestClassifier(n_estimators=100, random_state=2)
-gb_model = GradientBoostingClassifier(n_estimators=100, random_state=2)
+# create Streamlit app
+st.title("Credit Card Fraud Detection Model")
+st.write("Enter the following features to check if the transaction is legitimate or fraudulent:")
 
-# Voting Classifier
-ensemble_model = VotingClassifier(
-    estimators=[
-        ('lr', lr_model),
-        ('rf', rf_model),
-        ('gb', gb_model)
-    ],
-    voting='hard'
-)
+# create input fields for user to enter feature values
+input_df = st.text_input('Input all features separated by commas')
+input_df_lst = input_df.split(',')
 
-# Train ensemble model
-ensemble_model.fit(X_train, y_train)
+# create a button to submit input and get prediction
+submit = st.button("Submit")
 
-# Accuracy (optional display)
-train_acc = accuracy_score(ensemble_model.predict(X_train), y_train)
-test_acc = accuracy_score(ensemble_model.predict(X_test), y_test)
-
-# === Streamlit UI ===
-st.title("💳 Credit Card Fraud Detection")
-st.write(f"Ensemble model accuracy: **{test_acc:.4f}**")
-st.write("Enter all 30 feature values separated by commas to check if a transaction is **legitimate or fraudulent**.")
-
-# Input field
-input_text = st.text_input("📝 Feature Input", placeholder="Enter 30 comma-separated values like: 0.1, -1.2, ...")
-
-# Submit button
-if st.button("Submit"):
+if submit:
     try:
-        # Parse and convert input to float array
-        input_list = [float(i.strip()) for i in input_text.split(',')]
-        
-        if len(input_list) != X.shape[1]:
-            st.error(f"⚠️ Please enter exactly {X.shape[1]} features.")
+        # get input feature values
+        features = np.array(input_df_lst, dtype=np.float64)
+        # make prediction
+        prediction = model.predict(features.reshape(1, -1))
+        # display result
+        if prediction[0] == 0:
+            st.write("Legitimate transaction")
         else:
-            # Apply the same scaling to the input
-            input_array = np.array(input_list).reshape(1, -1)
-            input_scaled = scaler.transform(input_array)
-            prediction = ensemble_model.predict(input_scaled)[0]
-            result = "✅ Legitimate transaction" if prediction == 0 else "🚨 Fraudulent transaction"
-            st.success(result)
-    except Exception as e:
-        st.error("⚠️ Invalid input. Please enter numeric values only.")
+            st.write("Fraudulent transaction")
+    except ValueError:
+        st.write("Please enter valid feature values separated by commas.")
