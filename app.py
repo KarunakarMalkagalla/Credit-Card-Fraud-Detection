@@ -72,13 +72,13 @@ test_roc_auc = roc_auc_score(y_test, y_test_proba)
 st.title("💳 Credit Card Fraud Detection")
 st.write("Enter all 30 feature values separated by commas to check if a transaction is **legitimate or fraudulent**.")
 
-# Display model performance metrics in the app
+# Display model performance metrics in the app in percentage format
 st.subheader("📊 Model Performance (on Test Set)")
-st.markdown(f"- **Accuracy:** `{test_acc:.4f}`")
-st.markdown(f"- **Precision:** `{test_precision:.4f}`")
-st.markdown(f"- **Recall (Fraud Detection Rate):** `{test_recall:.4f}`")
-st.markdown(f"- **F1-Score:** `{test_f1:.4f}`")
-st.markdown(f"- **ROC AUC Score:** `{test_roc_auc:.4f}`")
+st.markdown(f"- **Accuracy:** `{test_acc * 100:.2f}%`")
+st.markdown(f"- **Precision:** `{test_precision * 100:.2f}%`")
+st.markdown(f"- **Recall (Fraud Detection Rate):** `{test_recall * 100:.2f}%`")
+st.markdown(f"- **F1-Score:** `{test_f1 * 100:.2f}%`")
+st.markdown(f"- **ROC AUC Score:** `{test_roc_auc * 100:.2f}%`")
 st.info("💡 **Recall** is crucial for fraud detection, as it measures how many actual fraud cases the model caught.")
 st.write("---")
 
@@ -106,10 +106,10 @@ if st.button("Submit"):
             result = "✅ Legitimate transaction" if prediction == 0 else "🚨 Fraudulent transaction"
             st.success(result)
             
-            # Optional: Show prediction probability
+            # Optional: Show prediction probability in percentage
             prediction_proba = model.predict_proba(input_scaled)[0]
-            st.write(f"Confidence (Legitimate): {prediction_proba[0]:.2f}")
-            st.write(f"Confidence (Fraudulent): {prediction_proba[1]:.2f}")
+            st.write(f"Confidence (Legitimate): {prediction_proba[0] * 100:.2f}%")
+            st.write(f"Confidence (Fraudulent): {prediction_proba[1] * 100:.2f}%")
 
     except ValueError:
         st.error("⚠️ Invalid input. Please ensure all values are numeric and separated by commas.")
